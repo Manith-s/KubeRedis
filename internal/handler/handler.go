@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 
@@ -9,23 +10,32 @@ import (
 )
 
 type Handler struct {
-	store *store.KVStore
+	store store.Store
 }
 
-func New(s *store.KVStore) *Handler {
+func New(s store.Store) *Handler {
 	return &Handler{store: s}
 }
 
-// Register wires routes onto the provided mux.
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/health", h.health)
+	mux.HandleFunc("/ready", h.ready)
 	mux.HandleFunc("/keys/", h.keys)
 }
 
-func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func (h *Handler) ready(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := h.store.Ping(r.Context()); err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not ready", "error": err.Error()})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 }
 
 func (h *Handler) keys(w http.ResponseWriter, r *http.Request) {
@@ -37,18 +47,23 @@ func (h *Handler) keys(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		h.getKey(w, key)
+		h.getKey(w, r, key)
 	case http.MethodPut:
 		h.putKey(w, r, key)
 	case http.MethodDelete:
-		h.deleteKey(w, key)
+		h.deleteKey(w, r, key)
 	default:
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 	}
 }
 
-func (h *Handler) getKey(w http.ResponseWriter, key string) {
-	val, ok := h.store.Get(key)
+func (h *Handler) getKey(w http.ResponseWriter, r *http.Request, key string) {
+	val, ok, err := h.store.Get(r.Context(), key)
+	if err != nil {
+		log.Printf("store GET error: %v", err)
+		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+		return
+	}
 	if !ok {
 		http.Error(w, `{"error":"key not found"}`, http.StatusNotFound)
 		return
@@ -65,14 +80,24 @@ func (h *Handler) putKey(w http.ResponseWriter, r *http.Request, key string) {
 		http.Error(w, `{"error":"invalid json body"}`, http.StatusBadRequest)
 		return
 	}
-	h.store.Set(key, body.Value)
+	if err := h.store.Set(r.Context(), key, body.Value); err != nil {
+		log.Printf("store SET error: %v", err)
+		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{"key": key, "value": body.Value})
 }
 
-func (h *Handler) deleteKey(w http.ResponseWriter, key string) {
-	if !h.store.Delete(key) {
+func (h *Handler) deleteKey(w http.ResponseWriter, r *http.Request, key string) {
+	existed, err := h.store.Delete(r.Context(), key)
+	if err != nil {
+		log.Printf("store DEL error: %v", err)
+		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+		return
+	}
+	if !existed {
 		http.Error(w, `{"error":"key not found"}`, http.StatusNotFound)
 		return
 	}

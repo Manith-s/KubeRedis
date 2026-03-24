@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+  namespace: kuberedis
+data:
+  redis.conf: |
+    bind 0.0.0.0
+    protected-mode no
+    port 6379
+    tcp-backlog 511
+    timeout 0
+    tcp-keepalive 300
+    dir /data
+    appendonly yes
+    appendfsync everysec
+    save 900 1
+    save 300 10
+    save 60 10000
+    loglevel notice
+  init.sh: |
+    #!/bin/sh
+    set -e
+    cp /mnt/config/redis.conf /etc/redis/redis.conf
+    ORDINAL=$(echo "$HOSTNAME" | rev | cut -d'-' -f1 | rev)
+    if [ "$ORDINAL" != "0" ]; then
+      echo "replicaof redis-0.redis-headless.kuberedis.svc.cluster.local 6379" >> /etc/redis/redis.conf
+    fi

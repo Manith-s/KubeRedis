@@ -1,35 +1,55 @@
 package store
 
-import "sync"
+import (
+	"context"
+	"sync"
+)
 
-type KVStore struct {
+type Store interface {
+	Get(ctx context.Context, key string) (string, bool, error)
+	Set(ctx context.Context, key, value string) error
+	Delete(ctx context.Context, key string) (bool, error)
+	Ping(ctx context.Context) error
+	Close() error
+}
+
+type MemoryStore struct {
 	mu   sync.RWMutex
 	data map[string]string
 }
 
-func New() *KVStore {
-	return &KVStore{data: make(map[string]string)}
+func NewMemory() *MemoryStore {
+	return &MemoryStore{data: make(map[string]string)}
 }
 
-func (s *KVStore) Get(key string) (string, bool) {
+func (s *MemoryStore) Get(_ context.Context, key string) (string, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	v, ok := s.data[key]
-	return v, ok
+	return v, ok, nil
 }
 
-func (s *KVStore) Set(key, value string) {
+func (s *MemoryStore) Set(_ context.Context, key, value string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.data[key] = value
+	return nil
 }
 
-func (s *KVStore) Delete(key string) bool {
+func (s *MemoryStore) Delete(_ context.Context, key string) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, ok := s.data[key]
 	if ok {
 		delete(s.data, key)
 	}
-	return ok
+	return ok, nil
+}
+
+func (s *MemoryStore) Ping(_ context.Context) error {
+	return nil
+}
+
+func (s *MemoryStore) Close() error {
+	return nil
 }

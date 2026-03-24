@@ -6,3 +6,4 @@ metadata:
 data:
   APP_PORT: "8080"
   LOG_LEVEL: "info"
+  REDIS_ADDR: "redis-0.redis-headless.kuberedis.svc.cluster.local:6379"

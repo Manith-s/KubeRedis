@@ -5,12 +5,9 @@ NAMESPACE  := kuberedis
 KIND_CLUSTER := kuberedis
 
 # ── Go ───────────────────────────────────────────────
-.PHONY: build test
+.PHONY: build
 build:
 	go build -o bin/$(APP_NAME) ./cmd/kvstore
-
-test:
-	go test ./...
 
 # ── Docker ───────────────────────────────────────────
 .PHONY: docker-build kind-load
@@ -28,10 +25,38 @@ kind-create:
 kind-delete:
 	kind delete cluster --name $(KIND_CLUSTER)
 
-# ── Kubernetes ───────────────────────────────────────
-.PHONY: deploy teardown status
-deploy:
+# ── Redis (StatefulSet) ─────────────────────────────
+.PHONY: deploy-redis teardown-redis redis-status
+deploy-redis:
 	kubectl apply -f deploy/base/namespace.yaml
+	kubectl apply -f deploy/base/redis-configmap.yaml
+	kubectl apply -f deploy/base/redis-headless-service.yaml
+	kubectl apply -f deploy/base/redis-statefulset.yaml
+	@echo "Waiting for redis-0 to become ready..."
+	kubectl rollout status statefulset/redis -n $(NAMESPACE) --timeout=120s
+
+teardown-redis:
+	kubectl delete statefulset redis -n $(NAMESPACE) --ignore-not-found
+	kubectl delete service redis-headless -n $(NAMESPACE) --ignore-not-found
+	kubectl delete configmap redis-config -n $(NAMESPACE) --ignore-not-found
+	kubectl delete pvc -l app=redis -n $(NAMESPACE) --ignore-not-found
+
+redis-status:
+	@echo "=== StatefulSet ==="
+	kubectl get statefulset redis -n $(NAMESPACE)
+	@echo ""
+	@echo "=== Pods ==="
+	kubectl get pods -l app=redis -n $(NAMESPACE) -o wide
+	@echo ""
+	@echo "=== PVCs ==="
+	kubectl get pvc -l app=redis -n $(NAMESPACE)
+
+redis-cli:
+	kubectl exec -it redis-0 -n $(NAMESPACE) -- redis-cli
+
+# ── Kubernetes (full stack) ──────────────────────────
+.PHONY: deploy teardown status
+deploy: deploy-redis
 	kubectl apply -f deploy/base/configmap.yaml
 	kubectl apply -f deploy/base/secret.yaml
 	kubectl apply -f deploy/base/deployment.yaml
@@ -41,7 +66,11 @@ teardown:
 	kubectl delete namespace $(NAMESPACE) --ignore-not-found
 
 status:
+	@echo "=== All Resources ==="
 	kubectl get all -n $(NAMESPACE)
+	@echo ""
+	@echo "=== PVCs ==="
+	kubectl get pvc -n $(NAMESPACE)
 
 # ── Convenience ──────────────────────────────────────
 .PHONY: port-forward logs
@@ -50,6 +79,9 @@ port-forward:
 
 logs:
 	kubectl logs -n $(NAMESPACE) -l app=$(APP_NAME) --tail=50 -f
+
+redis-logs:
+	kubectl logs -n $(NAMESPACE) -l app=redis --tail=50 -f
 
 # ── Full workflow ────────────────────────────────────
 .PHONY: up down
