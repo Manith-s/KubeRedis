@@ -1,0 +1,57 @@
+{{- if .Values.preInstallValidation.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "kuberedis.fullname" . }}-pre-install-check
+  labels:
+    {{- include "kuberedis.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": hook-succeeded,before-hook-creation
+spec:
+  template:
+    metadata:
+      name: {{ include "kuberedis.fullname" . }}-pre-install-check
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: validate
+          image: "{{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}"
+          command:
+            - sh
+            - -c
+            - |
+              echo "=== KubeRedis Pre-Install Validation ==="
+              echo ""
+
+              ERRORS=0
+
+              if [ {{ .Values.redis.replicaCount }} -lt 1 ]; then
+                echo "FAIL: redis.replicaCount must be >= 1 (got {{ .Values.redis.replicaCount }})"
+                ERRORS=$((ERRORS + 1))
+              else
+                echo "OK:   redis.replicaCount = {{ .Values.redis.replicaCount }}"
+              fi
+
+              if [ {{ .Values.kvstore.replicaCount }} -lt 1 ]; then
+                echo "FAIL: kvstore.replicaCount must be >= 1 (got {{ .Values.kvstore.replicaCount }})"
+                ERRORS=$((ERRORS + 1))
+              else
+                echo "OK:   kvstore.replicaCount = {{ .Values.kvstore.replicaCount }}"
+              fi
+
+              echo "OK:   persistence = {{ .Values.redis.persistence.enabled }}"
+              {{- if .Values.redis.persistence.enabled }}
+              echo "OK:   storage size = {{ .Values.redis.persistence.size }}"
+              {{- end }}
+              echo "OK:   metrics = {{ .Values.redis.metrics.enabled }}"
+
+              echo ""
+              if [ $ERRORS -gt 0 ]; then
+                echo "Validation FAILED with $ERRORS error(s)."
+                exit 1
+              fi
+              echo "All validations passed."
+  backoffLimit: 1
+{{- end }}

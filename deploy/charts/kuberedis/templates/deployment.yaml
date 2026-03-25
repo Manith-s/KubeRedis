@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kuberedis.kvstore.name" . }}
+  labels:
+    {{- include "kuberedis.kvstore.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.kvstore.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "kuberedis.kvstore.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kuberedis.kvstore.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: kvstore
+          image: "{{ .Values.kvstore.image.repository }}:{{ .Values.kvstore.image.tag }}"
+          imagePullPolicy: {{ .Values.kvstore.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.kvstore.containerPort }}
+              name: http
+          envFrom:
+            - configMapRef:
+                name: {{ include "kuberedis.kvstore.name" . }}-config
+          env:
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kuberedis.kvstore.name" . }}-secret
+                  key: API_KEY
+          {{- with .Values.kvstore.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.kvstore.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.kvstore.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}

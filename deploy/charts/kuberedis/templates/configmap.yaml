@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kuberedis.kvstore.name" . }}-config
+  labels:
+    {{- include "kuberedis.kvstore.labels" . | nindent 4 }}
+data:
+  APP_PORT: {{ .Values.kvstore.containerPort | quote }}
+  LOG_LEVEL: {{ .Values.kvstore.logLevel | quote }}
+  REDIS_ADDR: {{ include "kuberedis.redis.primaryAddr" . | quote }}

@@ -1,0 +1,109 @@
+## KubeRedis default values
+## Override with -f values-dev.yaml or values-staging.yaml for per-env config.
+
+nameOverride: ""
+fullnameOverride: ""
+
+# ── Go KVStore API ────────────────────────────────────
+kvstore:
+  replicaCount: 3
+
+  image:
+    repository: kuberedis-kvstore
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  containerPort: 8080
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  logLevel: info
+
+  apiKey: "changeme-super-secret-key"
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 5
+
+# ── Redis Cluster ─────────────────────────────────────
+redis:
+  replicaCount: 3
+
+  image:
+    repository: redis
+    tag: "7.2-alpine"
+    pullPolicy: IfNotPresent
+
+  port: 6379
+
+  persistence:
+    enabled: true
+    size: 1Gi
+    # Leave empty to use the cluster default StorageClass.
+    storageClass: ""
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+  # Spread Redis pods across nodes when possible.
+  podAntiAffinity:
+    enabled: true
+
+  config:
+    bind: "0.0.0.0"
+    protectedMode: "no"
+    tcpBacklog: 511
+    timeout: 0
+    tcpKeepalive: 300
+    appendonly: "yes"
+    appendfsync: "everysec"
+    save:
+      - "900 1"
+      - "300 10"
+      - "60 10000"
+    loglevel: "notice"
+
+  # Optional Redis metrics exporter sidecar (oliver006/redis_exporter).
+  metrics:
+    enabled: false
+    image:
+      repository: oliver006/redis_exporter
+      tag: latest
+      pullPolicy: IfNotPresent
+    port: 9121
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+
+# ── Pre-install validation hook ───────────────────────
+preInstallValidation:
+  enabled: true

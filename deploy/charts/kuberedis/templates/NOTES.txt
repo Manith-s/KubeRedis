@@ -1,0 +1,68 @@
+═══════════════════════════════════════════════════════
+  KubeRedis has been deployed!
+═══════════════════════════════════════════════════════
+
+  Release:   {{ .Release.Name }}
+  Namespace: {{ .Release.Namespace }}
+  Chart:     {{ .Chart.Name }}-{{ .Chart.Version }}
+
+  Redis cluster : {{ .Values.redis.replicaCount }} pod(s) (1 primary + {{ sub (int .Values.redis.replicaCount) 1 }} replica(s))
+  KVStore API   : {{ .Values.kvstore.replicaCount }} replica(s)
+{{- if .Values.redis.persistence.enabled }}
+  Persistence   : ENABLED ({{ .Values.redis.persistence.size }} per Redis pod)
+{{- else }}
+  Persistence   : DISABLED (data will be lost on pod restart)
+{{- end }}
+{{- if .Values.redis.metrics.enabled }}
+  Metrics       : ENABLED (port {{ .Values.redis.metrics.port }})
+{{- end }}
+
+── Access the KVStore API ──────────────────────────────
+
+  kubectl port-forward -n {{ .Release.Namespace }} \
+    svc/{{ include "kuberedis.kvstore.name" . }} 8080:{{ .Values.kvstore.service.port }}
+
+  Then:
+
+    # Health check
+    curl http://localhost:8080/health
+
+    # Set a key (requires API key)
+    curl -X PUT http://localhost:8080/keys/hello \
+      -H "Authorization: Bearer <your-api-key>" \
+      -H "Content-Type: application/json" \
+      -d '{"value": "world"}'
+
+    # Get a key
+    curl http://localhost:8080/keys/hello \
+      -H "Authorization: Bearer <your-api-key>"
+
+── Useful Commands ─────────────────────────────────────
+
+  # Pod status
+  kubectl get pods -n {{ .Release.Namespace }} \
+    -l "app.kubernetes.io/instance={{ .Release.Name }}"
+
+  # Redis replication info
+  kubectl exec -it {{ include "kuberedis.redis.name" . }}-0 \
+    -n {{ .Release.Namespace }} -- redis-cli info replication
+
+  # KVStore logs
+  kubectl logs -n {{ .Release.Namespace }} \
+    -l "app.kubernetes.io/component=kvstore" --tail=50
+
+  # Redis logs
+  kubectl logs -n {{ .Release.Namespace }} \
+    -l "app.kubernetes.io/component=redis" --tail=50
+
+── Lifecycle Operations ────────────────────────────────
+
+  # Upgrade (e.g. change replica count)
+  helm upgrade {{ .Release.Name }} deploy/charts/kuberedis \
+    --namespace {{ .Release.Namespace }} --set redis.replicaCount=5
+
+  # Rollback to previous revision
+  helm rollback {{ .Release.Name }} --namespace {{ .Release.Namespace }}
+
+  # Uninstall
+  helm uninstall {{ .Release.Name }} --namespace {{ .Release.Namespace }}

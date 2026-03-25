@@ -1,0 +1,101 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "kuberedis.redis.name" . }}
+  labels:
+    {{- include "kuberedis.redis.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "kuberedis.redis.headlessServiceName" . }}
+  replicas: {{ .Values.redis.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "kuberedis.redis.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kuberedis.redis.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- if .Values.redis.podAntiAffinity.enabled }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    {{- include "kuberedis.redis.selectorLabels" . | nindent 20 }}
+                topologyKey: kubernetes.io/hostname
+      {{- end }}
+      initContainers:
+        - name: init-redis
+          image: "{{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}"
+          imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
+          command: ["sh", "/mnt/config/init.sh"]
+          volumeMounts:
+            - name: config-volume
+              mountPath: /mnt/config
+            - name: redis-config
+              mountPath: /etc/redis
+      containers:
+        - name: redis
+          image: "{{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}"
+          imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
+          command: ["redis-server", "/etc/redis/redis.conf"]
+          ports:
+            - containerPort: {{ .Values.redis.port }}
+              name: redis
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: redis-config
+              mountPath: /etc/redis
+          {{- with .Values.redis.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 15
+            periodSeconds: 20
+        {{- if .Values.redis.metrics.enabled }}
+        - name: redis-exporter
+          image: "{{ .Values.redis.metrics.image.repository }}:{{ .Values.redis.metrics.image.tag }}"
+          imagePullPolicy: {{ .Values.redis.metrics.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.redis.metrics.port }}
+              name: metrics
+          {{- with .Values.redis.metrics.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        {{- end }}
+      volumes:
+        - name: config-volume
+          configMap:
+            name: {{ include "kuberedis.redis.name" . }}-config
+            defaultMode: 0755
+        - name: redis-config
+          emptyDir: {}
+        {{- if not .Values.redis.persistence.enabled }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+  {{- if .Values.redis.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.redis.persistence.storageClass }}
+        storageClassName: {{ .Values.redis.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.redis.persistence.size }}
+  {{- end }}

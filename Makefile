@@ -1,8 +1,10 @@
-APP_NAME   := kvstore
-IMAGE      := kuberedis-kvstore
-TAG        := latest
-NAMESPACE  := kuberedis
+APP_NAME     := kvstore
+IMAGE        := kuberedis-kvstore
+TAG          := latest
+NAMESPACE    := kuberedis
 KIND_CLUSTER := kuberedis
+CHART_DIR    := deploy/charts/kuberedis
+RELEASE      := kuberedis
 
 # ── Go ───────────────────────────────────────────────
 .PHONY: build
@@ -83,9 +85,43 @@ logs:
 redis-logs:
 	kubectl logs -n $(NAMESPACE) -l app=redis --tail=50 -f
 
+# ── Helm ─────────────────────────────────────────────
+.PHONY: helm-lint helm-template helm-install helm-upgrade helm-uninstall
+.PHONY: helm-install-dev helm-install-staging
+
+helm-lint:
+	helm lint $(CHART_DIR)
+
+helm-template:
+	helm template $(RELEASE) $(CHART_DIR) --namespace $(NAMESPACE)
+
+helm-install: kind-load
+	helm install $(RELEASE) $(CHART_DIR) --namespace $(NAMESPACE) --create-namespace
+
+helm-upgrade:
+	helm upgrade $(RELEASE) $(CHART_DIR) --namespace $(NAMESPACE)
+
+helm-uninstall:
+	helm uninstall $(RELEASE) --namespace $(NAMESPACE)
+
+helm-install-dev: kind-load
+	helm install $(RELEASE) $(CHART_DIR) \
+		--namespace $(NAMESPACE)-dev --create-namespace \
+		-f $(CHART_DIR)/values-dev.yaml
+
+helm-install-staging: kind-load
+	helm install $(RELEASE) $(CHART_DIR) \
+		--namespace $(NAMESPACE)-staging --create-namespace \
+		-f $(CHART_DIR)/values-staging.yaml
+
 # ── Full workflow ────────────────────────────────────
-.PHONY: up down
+.PHONY: up down helm-up helm-down
 up: kind-create kind-load deploy
 	@echo "Cluster ready. Run 'make port-forward' then curl http://localhost:8080/health"
 
+helm-up: kind-create kind-load helm-install
+	@echo "Cluster ready (Helm). Run 'make port-forward' then curl http://localhost:8080/health"
+
 down: teardown kind-delete
+
+helm-down: helm-uninstall kind-delete

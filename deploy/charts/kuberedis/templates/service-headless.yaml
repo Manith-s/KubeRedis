@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kuberedis.redis.headlessServiceName" . }}
+  labels:
+    {{- include "kuberedis.redis.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "kuberedis.redis.selectorLabels" . | nindent 4 }}
+  ports:
+    - port: {{ .Values.redis.port }}
+      targetPort: {{ .Values.redis.port }}
+      protocol: TCP
+      name: redis

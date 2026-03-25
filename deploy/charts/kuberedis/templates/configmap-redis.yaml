@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kuberedis.redis.name" . }}-config
+  labels:
+    {{- include "kuberedis.redis.labels" . | nindent 4 }}
+data:
+  redis.conf: |
+    bind {{ .Values.redis.config.bind }}
+    protected-mode {{ .Values.redis.config.protectedMode }}
+    port {{ .Values.redis.port }}
+    tcp-backlog {{ .Values.redis.config.tcpBacklog }}
+    timeout {{ .Values.redis.config.timeout }}
+    tcp-keepalive {{ .Values.redis.config.tcpKeepalive }}
+    dir /data
+    appendonly {{ .Values.redis.config.appendonly }}
+    appendfsync {{ .Values.redis.config.appendfsync }}
+    {{- range .Values.redis.config.save }}
+    save {{ . }}
+    {{- end }}
+    loglevel {{ .Values.redis.config.loglevel }}
+  init.sh: |
+    #!/bin/sh
+    set -e
+    cp /mnt/config/redis.conf /etc/redis/redis.conf
+    ORDINAL=$(echo "$HOSTNAME" | rev | cut -d'-' -f1 | rev)
+    if [ "$ORDINAL" != "0" ]; then
+      echo "replicaof {{ include "kuberedis.redis.name" . }}-0.{{ include "kuberedis.redis.headlessServiceName" . }}.{{ .Release.Namespace }}.svc.cluster.local {{ .Values.redis.port }}" >> /etc/redis/redis.conf
+    fi

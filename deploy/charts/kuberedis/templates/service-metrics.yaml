@@ -1,0 +1,17 @@
+{{- if .Values.redis.metrics.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kuberedis.redis.name" . }}-metrics
+  labels:
+    {{- include "kuberedis.redis.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis-metrics
+spec:
+  selector:
+    {{- include "kuberedis.redis.selectorLabels" . | nindent 4 }}
+  ports:
+    - port: {{ .Values.redis.metrics.port }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+{{- end }}
